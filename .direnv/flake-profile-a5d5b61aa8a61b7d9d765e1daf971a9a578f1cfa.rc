@@ -23,6 +23,8 @@ IN_NIX_SHELL='impure'
 export IN_NIX_SHELL
 LD='ld'
 export LD
+LD_LIBRARY_PATH='/nix/store/li1008zymvj7sz8jkdk9brkslfq9jy8w-wayland-1.26.0/lib:/nix/store/nvrv5w6rhc39h8snrsw03nqs679cf7rh-libxkbcommon-1.13.2/lib'
+export LD_LIBRARY_PATH
 LINENO='79'
 MACHTYPE='x86_64-pc-linux-gnu'
 NIX_BINTOOLS='/nix/store/fy8mxgdjvjvmagv2igmj428a9j17hpcf-binutils-wrapper-2.46'
@@ -35,7 +37,7 @@ NIX_CC='/nix/store/j1938gsbvbhkyz4kbmvjk56r479mkw3s-gcc-wrapper-16.2.0'
 export NIX_CC
 NIX_CC_WRAPPER_TARGET_HOST_x86_64_unknown_linux_gnu='1'
 export NIX_CC_WRAPPER_TARGET_HOST_x86_64_unknown_linux_gnu
-NIX_CFLAGS_COMPILE=' -frandom-seed=07ahdd860c'
+NIX_CFLAGS_COMPILE=' -frandom-seed=h10wsfrdxm'
 export NIX_CFLAGS_COMPILE
 NIX_ENFORCE_NO_NATIVE='1'
 export NIX_ENFORCE_NO_NATIVE
@@ -63,6 +65,8 @@ RANLIB='ranlib'
 export RANLIB
 READELF='readelf'
 export READELF
+RUST_SRC_PATH='/nix/store/g9k58hrq81acl9jppf5gh6967r42agv3-rust-lib-src'
+export RUST_SRC_PATH
 SHELL='/nix/store/10dxp0qxqxxsyiljrh2kp0xqhz6arhcx-bash-5.3p15/bin/bash'
 export SHELL
 SIZE='size'

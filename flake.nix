@@ -27,9 +27,18 @@
             rust-analyzer
             clippy
           ];
-        };
 
-        RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (
+            with pkgs;
+            [
+              wayland
+              libxkbcommon
+              # libX11
+            ]
+          );
+
+          RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
+        };
       }
     );
 }

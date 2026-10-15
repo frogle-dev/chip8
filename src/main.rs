@@ -1,3 +1,7 @@
+mod chip8;
+
 fn main() {
-    println!("Hello, world!");
+    if let Err(err) = chip8::init() {
+        eprintln!("Error intializing Chip8: {}", err);
+    }
 }
