@@ -1,66 +1,107 @@
+use std::num::NonZeroU32;
+use std::rc::Rc;
+
 use thiserror::Error;
 
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, OwnedDisplayHandle};
 use winit::window::{Window, WindowId};
 
-const WIDTH: u8 = 64;
-const HEIGHT: u8 = 32;
+use softbuffer::{Context, Surface};
+
+const CHIP8_WIDTH: u32 = 64;
+const CHIP8_HEIGHT: u32 = 32;
+
+const SCALED_WIDTH: u32 = CHIP8_WIDTH * 20;
+const SCALED_HEIGHT: u32 = CHIP8_HEIGHT * 20;
 
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Winit event loop error")]
-    EventLoopError(#[from] winit::error::EventLoopError),
+    EventLoop(#[from] winit::error::EventLoopError),
     #[error("Winit Os Error")]
-    OsError(#[from] winit::error::OsError),
+    Os(#[from] winit::error::OsError),
+    #[error("Soft buffer error")]
+    SoftBuffer(#[from] softbuffer::SoftBufferError),
 }
 
 #[derive(Default)]
 struct Chip8 {
-    window: Option<Window>,
+    window: Option<Rc<Window>>,
+    surface: Option<Surface<OwnedDisplayHandle, Rc<Window>>>,
 }
 
 impl ApplicationHandler for Chip8 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        self.window = Some(
+        self.window = Some(Rc::new(
             event_loop
                 .create_window(
                     Window::default_attributes()
                         .with_title("Chip8")
-                        .with_inner_size(LogicalSize::new(WIDTH, HEIGHT)),
+                        .with_inner_size(LogicalSize::new(SCALED_WIDTH, SCALED_HEIGHT))
+                        .with_resizable(false),
                 )
                 .unwrap(),
-        );
+        ));
+
+        let context = Context::new(event_loop.owned_display_handle()).unwrap();
+        self.surface =
+            Some(Surface::new(&context, Rc::clone(self.window.as_ref().unwrap())).unwrap());
     }
 
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
-        window_id: WindowId,
+        _window_id: WindowId,
         event: WindowEvent,
     ) {
         match event {
+            WindowEvent::RedrawRequested => {
+                let Some(surface) = &mut self.surface else {
+                    eprintln!("RedrawRequested ran before resumed or after suspended");
+                    return;
+                };
+
+                let size = self.window.as_ref().unwrap().inner_size();
+                surface
+                    .resize(
+                        NonZeroU32::new(size.width).unwrap(),
+                        NonZeroU32::new(size.height).unwrap(),
+                    )
+                    .unwrap();
+
+                let mut buffer = surface.buffer_mut().unwrap();
+                for i in 0..(buffer.width().get() * buffer.height().get()) {
+                    let y = i / buffer.width().get();
+                    let x = i % buffer.width().get();
+
+                    let r = x % 255;
+                    let g = y % 255;
+                    let b = (x * y) % 255;
+
+                    buffer[i as usize] = b | (g << 8) | (r << 16);
+                }
+
+                buffer.present().unwrap();
+            }
             WindowEvent::CloseRequested => {
                 println!("Close button pressed, exiting");
                 event_loop.exit();
-            }
-            WindowEvent::RedrawRequested => {
-                self.window.as_ref().unwrap().request_redraw();
             }
             _ => (),
         }
     }
 }
 
-pub fn init() -> Result<(), Error> {
-    let mut _mem: [u8; 4096];
+pub fn run() -> Result<(), Error> {
+    let mut _mem: [u8; 4000];
 
-    // program counter
-    let _pc: u16;
-    // index register
-    let _idx_reg: u16;
+    let _program_counter: u16;
+    let _idx_register: u16;
+
+    let stack: Vec<u16> = Vec::new();
 
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
