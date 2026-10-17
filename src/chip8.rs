@@ -1,5 +1,7 @@
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
+use std::{env, fs};
 
 use thiserror::Error;
 
@@ -25,15 +27,57 @@ pub enum Error {
     Os(#[from] winit::error::OsError),
     #[error("Soft buffer error")]
     SoftBuffer(#[from] softbuffer::SoftBufferError),
+    #[error("Error reading chip8 file")]
+    Io(#[from] std::io::Error),
 }
 
-#[derive(Default)]
-struct Chip8 {
+struct Core {
+    last_time: Instant,
+
+    ram: [u8; 4096],
+    stack: [u16; 16],
+    registers: [u8; 16],
+
+    program_counter: u16,
+    idx_register: u16,
+
+    delay_timer: u8,
+    sound_timer: u8,
+}
+
+impl Core {
+    fn new(rom: Vec<u8>) -> Self {
+        Self {
+            last_time: Instant::now(),
+            ram: [0; 4096],
+            stack: [0; 16],
+            registers: [0; 16],
+            program_counter: 0,
+            idx_register: 0,
+            delay_timer: 0,
+            sound_timer: 0,
+        }
+    }
+}
+
+struct App {
     window: Option<Rc<Window>>,
     surface: Option<Surface<OwnedDisplayHandle, Rc<Window>>>,
+
+    core: Core,
 }
 
-impl ApplicationHandler for Chip8 {
+impl App {
+    fn new(core: Core) -> Self {
+        Self {
+            window: None,
+            surface: None,
+            core,
+        }
+    }
+}
+
+impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.window = Some(Rc::new(
             event_loop
@@ -93,21 +137,28 @@ impl ApplicationHandler for Chip8 {
             _ => (),
         }
     }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let elapsed = self.core.last_time.elapsed();
+        let dt = elapsed.as_secs_f64();
+        dbg!(dt);
+
+        self.core.last_time = Instant::now();
+
+        self.window.as_ref().unwrap().request_redraw();
+    }
 }
 
 pub fn run() -> Result<(), Error> {
-    let mut _mem: [u8; 4000];
-
-    let _program_counter: u16;
-    let _idx_register: u16;
-
-    let stack: Vec<u16> = Vec::new();
+    let args: Vec<String> = env::args().collect();
+    let rom = fs::read(&args[1])?;
 
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut chip8 = Chip8::default();
-    event_loop.run_app(&mut chip8)?;
+    let core = Core::new(rom);
+    let mut app = App::new(core);
+    event_loop.run_app(&mut app)?;
 
     Ok(())
 }
