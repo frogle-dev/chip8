@@ -1,7 +1,6 @@
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use std::{env, fs};
 
 use thiserror::Error;
 
@@ -40,6 +39,12 @@ struct Core {
     stack: [u16; 16],
     registers: [u8; 16],
 
+    // keypad is left side of keyboard
+    // for QWERTY:
+    // 1234 - 123C
+    // QWER - 456D
+    // ASDF - 789E
+    // ZXCV - A0BF
     keypad: [bool; 16],
 
     program_counter: u16,
@@ -194,7 +199,7 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         let elapsed = self.core.last_time.elapsed();
         let dt = elapsed.as_secs_f64();
         self.core.timer_60hz += dt;
@@ -217,10 +222,7 @@ impl ApplicationHandler for App {
     }
 }
 
-pub fn run() -> Result<(), Error> {
-    let args: Vec<String> = env::args().collect();
-    let rom = fs::read(&args[1])?;
-
+pub fn run(rom: Vec<u8>) -> Result<(), Error> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
 
