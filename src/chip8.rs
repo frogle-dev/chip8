@@ -64,8 +64,7 @@ struct Core {
 impl Core {
     fn new(rom: Vec<u8>, instructions_per_sec: u32) -> Self {
         let mut ram = [0 as u8; 4096];
-        dbg!(rom.len());
-        ram[..rom.len()].copy_from_slice(&rom);
+        ram[0x200..0x200 + rom.len()].copy_from_slice(&rom);
 
         Self {
             last_time: Instant::now(),
@@ -74,7 +73,7 @@ impl Core {
             stack: [0; 16],
             registers: [0; 16],
             keypad: [false; 16],
-            program_counter: 0,
+            program_counter: 0x200,
             idx_register: 0,
             delay_timer: 0,
             sound_timer: 0,
@@ -93,23 +92,54 @@ impl Core {
         self.program_counter += 2;
 
         // decode instruction
-        // first hex digit (4 bytes) are category of instruction
-        let nibble1 = 0b1111_0000_0000_0000;
-        let nibble2 = nibble1 << 4;
-        let nibble3 = nibble2 << 4;
-        let nibble4 = nibble3 << 4;
-
         let instr = (
-            instr_bytes & nibble1,
-            instr_bytes & nibble2,
-            instr_bytes & nibble3,
-            instr_bytes & nibble4,
+            (instr_bytes >> 12) as u8 & 0xF,
+            (instr_bytes >> 8) as u8 & 0xF,
+            (instr_bytes >> 4) as u8 & 0xF,
+            instr_bytes as u8 & 0xF,
         );
 
         match instr {
             // CLEAR DISPLAY: 00E0
-            (0, 0, 0xE, 0) => self.display = [0; DISPLAY_SIZE],
+            (0, 0, 0xE, 0) => {
+                println!("Clear screen");
+                self.display = [0; DISPLAY_SIZE];
+            }
+            // JUMP: 1NNN
+            (1, n1, n2, n3) => {
+                let addr = (n1 as u16) << 8 | (n2 as u16) << 4 | n3 as u16;
 
+                self.program_counter = addr;
+            }
+            // SET: 6XNN
+            (6, reg, n1, n2) => {
+                let val: u8 = ((n1 as u16) << 4 | n2 as u16) as u8;
+
+                self.registers[reg as usize] = val;
+            }
+            // ADD: 7XNN
+            (7, reg_idx, n1, n2) => {
+                let val: u8 = ((n1 as u16) << 4 | n2 as u16) as u8;
+
+                self.registers[reg_idx as usize] =
+                    match self.registers[reg_idx as usize].checked_add(val) {
+                        Some(res) => res,
+                        None => panic!("Error: add instruction integer overflow"),
+                    };
+            }
+            // SET INDEX: ANNN
+            (0xA, n1, n2, n3) => {
+                let val = (n1 as u16) << 8 | (n2 as u16) << 4 | n3 as u16;
+
+                self.idx_register = val;
+            }
+            // DISPLAY: DXYN
+            // (0xD, reg_idx1, reg_idx2, n) => {
+            //     let x_pos = self.registers[reg_idx1 as usize];
+            //     let y_pos = self.registers[reg_idx2 as usize];
+            //
+            //     // self.ram[self.idx_register..
+            // }
             _ => println!("Invalid nibble 1 in instruction"),
         };
 
