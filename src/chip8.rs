@@ -15,6 +15,7 @@ use softbuffer::{Context, Surface};
 
 const CHIP8_WIDTH: u32 = 64;
 const CHIP8_HEIGHT: u32 = 32;
+const DISPLAY_SIZE: usize = (CHIP8_WIDTH * CHIP8_HEIGHT) as usize;
 
 const SCALED_WIDTH: u32 = CHIP8_WIDTH * 20;
 const SCALED_HEIGHT: u32 = CHIP8_HEIGHT * 20;
@@ -52,22 +53,65 @@ struct Core {
 
     delay_timer: u8,
     sound_timer: u8,
+
+    instruction_timer: f64,
+    instructions_per_sec: u32,
+
+    display: [u32; DISPLAY_SIZE],
 }
 
 impl Core {
-    fn new(rom: Vec<u8>) -> Self {
+    fn new(rom: Vec<u8>, instructions_per_sec: u32) -> Self {
+        let mut ram = [0 as u8; 4096];
+        ram[511..511 + rom.len()].copy_from_slice(&rom);
+
         Self {
             last_time: Instant::now(),
             timer_60hz: 0.0,
-            ram: [0; 4096],
+            ram: ram,
             stack: [0; 16],
             registers: [0; 16],
             keypad: [false; 16],
-            program_counter: 0,
+            program_counter: 511,
             idx_register: 0,
             delay_timer: 0,
             sound_timer: 0,
+            instruction_timer: 0.0,
+            instructions_per_sec: instructions_per_sec,
+            display: [0; DISPLAY_SIZE],
         }
+    }
+
+    fn process_instruction(&mut self) {
+        // read instruction
+        // instructions are two bytes
+        let pc = self.program_counter as usize;
+        let instr_bytes = u16::from_be_bytes([self.ram[pc], self.ram[pc + 1]]);
+
+        self.program_counter += 2;
+
+        // decode instruction
+        // first hex digit (4 bytes) are category of instruction
+        let nibble1 = 0b1111_0000_0000_0000;
+        let nibble2 = nibble1 << 4;
+        let nibble3 = nibble2 << 4;
+        let nibble4 = nibble3 << 4;
+
+        let instr = (
+            instr_bytes & nibble1,
+            instr_bytes & nibble2,
+            instr_bytes & nibble3,
+            instr_bytes & nibble4,
+        );
+
+        match instr {
+            // CLEAR DISPLAY: 00E0
+            (0, 0, 0xE, 0) => self.display = [0; DISPLAY_SIZE],
+
+            _ => panic!("Invalid nibble 1 in instruction"),
+        };
+
+        // run instruction
     }
 }
 
@@ -156,14 +200,7 @@ impl ApplicationHandler for App {
 
                 let mut buffer = surface.buffer_mut().unwrap();
                 for i in 0..(buffer.width().get() * buffer.height().get()) {
-                    let y = i / buffer.width().get();
-                    let x = i % buffer.width().get();
-
-                    let r = x % 255;
-                    let g = y % 255;
-                    let b = (x * y) % 255;
-
-                    buffer[i as usize] = b | (g << 8) | (r << 16);
+                    buffer[i as usize] = self.core.display[i as usize];
                 }
 
                 buffer.present().unwrap();
@@ -174,7 +211,7 @@ impl ApplicationHandler for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 let pressed = event.state.is_pressed();
-                let idx: Option<usize> = match event.physical_key {
+                let idx = match event.physical_key {
                     PhysicalKey::Code(code) => {
                         if pressed && code == KeyCode::Escape {
                             event_loop.exit();
@@ -203,12 +240,13 @@ impl ApplicationHandler for App {
         let elapsed = self.core.last_time.elapsed();
         let dt = elapsed.as_secs_f64();
         self.core.timer_60hz += dt;
+        self.core.instruction_timer += dt;
 
         self.core.last_time = Instant::now();
 
         self.window.as_ref().unwrap().request_redraw();
 
-        // 60hz: 1/60 = ~0.01667
+        // 60hz = 1/60 = ~0.01667
         if self.core.timer_60hz >= 0.01667 {
             self.core.timer_60hz = 0.0;
 
@@ -219,14 +257,20 @@ impl ApplicationHandler for App {
                 self.core.sound_timer -= 1;
             }
         }
+
+        if self.core.instruction_timer >= (1.0 / self.core.instructions_per_sec as f64) {
+            self.core.instruction_timer = 0.0;
+
+            self.core.process_instruction();
+        }
     }
 }
 
-pub fn run(rom: Vec<u8>) -> Result<(), Error> {
+pub fn run(rom: Vec<u8>, instructions_per_sec: u32) -> Result<(), Error> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let core = Core::new(rom);
+    let core = Core::new(rom, instructions_per_sec);
     let mut app = App::new(core);
     event_loop.run_app(&mut app)?;
 
