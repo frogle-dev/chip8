@@ -17,8 +17,9 @@ const CHIP8_WIDTH: u32 = 64;
 const CHIP8_HEIGHT: u32 = 32;
 const DISPLAY_SIZE: usize = (CHIP8_WIDTH * CHIP8_HEIGHT) as usize;
 
-const SCALED_WIDTH: u32 = CHIP8_WIDTH * 20;
-const SCALED_HEIGHT: u32 = CHIP8_HEIGHT * 20;
+const SCALE: u32 = 20;
+const SCALED_WIDTH: u32 = CHIP8_WIDTH * SCALE;
+const SCALED_HEIGHT: u32 = CHIP8_HEIGHT * SCALE;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -63,7 +64,8 @@ struct Core {
 impl Core {
     fn new(rom: Vec<u8>, instructions_per_sec: u32) -> Self {
         let mut ram = [0 as u8; 4096];
-        ram[511..511 + rom.len()].copy_from_slice(&rom);
+        dbg!(rom.len());
+        ram[..rom.len()].copy_from_slice(&rom);
 
         Self {
             last_time: Instant::now(),
@@ -72,7 +74,7 @@ impl Core {
             stack: [0; 16],
             registers: [0; 16],
             keypad: [false; 16],
-            program_counter: 511,
+            program_counter: 0,
             idx_register: 0,
             delay_timer: 0,
             sound_timer: 0,
@@ -199,8 +201,8 @@ impl ApplicationHandler for App {
                     .unwrap();
 
                 let mut buffer = surface.buffer_mut().unwrap();
-                for i in 0..(buffer.width().get() * buffer.height().get()) {
-                    buffer[i as usize] = self.core.display[i as usize];
+                for i in 0..DISPLAY_SIZE {
+                    buffer[i * SCALE as usize] = self.core.display[i];
                 }
 
                 buffer.present().unwrap();
