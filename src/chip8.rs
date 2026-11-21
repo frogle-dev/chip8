@@ -78,7 +78,7 @@ impl Core {
             sound_timer: 0,
             instruction_timer: 0.0,
             instructions_per_sec: instructions_per_sec,
-            display: [0; DISPLAY_SIZE],
+            display: [u32::MAX; DISPLAY_SIZE],
         }
     }
 
@@ -108,7 +108,7 @@ impl Core {
             // CLEAR DISPLAY: 00E0
             (0, 0, 0xE, 0) => self.display = [0; DISPLAY_SIZE],
 
-            _ => panic!("Invalid nibble 1 in instruction"),
+            _ => println!("Invalid nibble 1 in instruction"),
         };
 
         // run instruction
