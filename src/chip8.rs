@@ -32,12 +32,57 @@ pub enum Error {
     Io(#[from] std::io::Error),
 }
 
+fn instr_nn(n1: u8, n2: u8) -> u8 {
+    n1 << 4 | n2 as u8
+}
+
+fn instr_nnn(n1: u8, n2: u8, n3: u8) -> u16 {
+    (n1 as u16) << 8 | (n2 as u16) << 4 | n3 as u16
+}
+
+struct CallStack {
+    arr: [u16; 16],
+    last_idx: usize,
+}
+
+impl CallStack {
+    fn new() -> Self {
+        Self {
+            arr: [0; 16],
+            last_idx: 0,
+        }
+    }
+
+    /// # Panics
+    fn push(&mut self, val: u16) {
+        if self.last_idx >= (self.arr.len() - 1) {
+            panic!("Push overflows CallStack size");
+        }
+
+        self.arr[self.last_idx] = val;
+
+        self.last_idx += 1;
+    }
+
+    /// # Panics
+    fn pop(&mut self) -> u16 {
+        if self.last_idx <= 0 {
+            panic!("Pop on empty CallStack");
+        }
+
+        let i = self.last_idx;
+        self.last_idx -= 1;
+
+        self.arr[i]
+    }
+}
+
 struct Core {
     last_time: Instant,
     timer_60hz: f64,
 
     ram: [u8; 4096],
-    stack: [u16; 16],
+    call_stack: CallStack,
     registers: [u8; 16],
 
     // keypad is left side of keyboard
@@ -91,7 +136,7 @@ impl Core {
             last_time: Instant::now(),
             timer_60hz: 0.0,
             ram: ram,
-            stack: [0; 16],
+            call_stack: CallStack::new(),
             registers: [0; 16],
             keypad: [false; 16],
             program_counter: 0x200,
@@ -127,19 +172,27 @@ impl Core {
             }
             // JUMP: 1NNN
             (1, n1, n2, n3) => {
-                let addr = (n1 as u16) << 8 | (n2 as u16) << 4 | n3 as u16;
+                let addr = instr_nnn(n1, n2, n3);
+
+                self.program_counter = addr;
+            }
+            // CALL SUBROUTINE: 2NNN
+            (2, n1, n2, n3) => {
+                let addr = instr_nnn(n1, n2, n3);
+
+                self.call_stack.push(self.program_counter);
 
                 self.program_counter = addr;
             }
             // SET: 6XNN
             (6, reg, n1, n2) => {
-                let val = ((n1 as u16) << 4 | n2 as u16) as u8;
+                let val = instr_nn(n1, n2);
 
                 self.registers[reg as usize] = val;
             }
             // ADD: 7XNN
             (7, reg_idx, n1, n2) => {
-                let val = n1 << 4 | n2;
+                let val = instr_nn(n1, n2);
 
                 self.registers[reg_idx as usize] =
                     match self.registers[reg_idx as usize].checked_add(val) {
@@ -149,7 +202,7 @@ impl Core {
             }
             // SET INDEX: ANNN
             (0xA, n1, n2, n3) => {
-                let val = (n1 as u16) << 8 | (n2 as u16) << 4 | n3 as u16;
+                let val = instr_nnn(n1, n2, n3);
 
                 self.idx_register = val;
             }
