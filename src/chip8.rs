@@ -1,6 +1,6 @@
 use std::num::NonZeroU32;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use thiserror::Error;
 
@@ -13,13 +13,13 @@ use winit::window::{Window, WindowId};
 
 use softbuffer::{Context, Surface};
 
-const CHIP8_WIDTH: u32 = 64;
-const CHIP8_HEIGHT: u32 = 32;
-const DISPLAY_SIZE: usize = (CHIP8_WIDTH * CHIP8_HEIGHT) as usize;
+const CHIP8_WIDTH: usize = 64;
+const CHIP8_HEIGHT: usize = 32;
+const DISPLAY_SIZE: usize = CHIP8_WIDTH * CHIP8_HEIGHT;
 
-const SCALE: u32 = 20;
-const SCALED_WIDTH: u32 = CHIP8_WIDTH * SCALE;
-const SCALED_HEIGHT: u32 = CHIP8_HEIGHT * SCALE;
+const SCALE: usize = 20;
+const SCALED_WIDTH: usize = CHIP8_WIDTH * SCALE;
+const SCALED_HEIGHT: usize = CHIP8_HEIGHT * SCALE;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -58,12 +58,34 @@ struct Core {
     instruction_timer: f64,
     instructions_per_sec: u32,
 
-    display: [u32; DISPLAY_SIZE],
+    display: [u64; CHIP8_HEIGHT as usize],
+    // display: [bool; DISPLAY_SIZE],
 }
 
 impl Core {
     fn new(rom: Vec<u8>, instructions_per_sec: u32) -> Self {
+        const FONT: [u8; 80] = [
+            0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+            0x20, 0x60, 0x20, 0x20, 0x70, // 1
+            0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+            0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+            0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+            0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+            0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+            0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+            0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+            0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+            0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+            0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+            0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+            0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+            0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+            0xF0, 0x80, 0xF0, 0x80, 0x80, // F
+        ];
+
         let mut ram = [0 as u8; 4096];
+        ram[..FONT.len()].copy_from_slice(&FONT);
+
         ram[0x200..0x200 + rom.len()].copy_from_slice(&rom);
 
         Self {
@@ -79,7 +101,7 @@ impl Core {
             sound_timer: 0,
             instruction_timer: 0.0,
             instructions_per_sec: instructions_per_sec,
-            display: [u32::MAX; DISPLAY_SIZE],
+            display: [0; CHIP8_HEIGHT as usize],
         }
     }
 
@@ -102,8 +124,7 @@ impl Core {
         match instr {
             // CLEAR DISPLAY: 00E0
             (0, 0, 0xE, 0) => {
-                println!("Clear screen");
-                self.display = [0; DISPLAY_SIZE];
+                self.display = [0; CHIP8_HEIGHT as usize];
             }
             // JUMP: 1NNN
             (1, n1, n2, n3) => {
@@ -113,13 +134,13 @@ impl Core {
             }
             // SET: 6XNN
             (6, reg, n1, n2) => {
-                let val: u8 = ((n1 as u16) << 4 | n2 as u16) as u8;
+                let val = ((n1 as u16) << 4 | n2 as u16) as u8;
 
                 self.registers[reg as usize] = val;
             }
             // ADD: 7XNN
             (7, reg_idx, n1, n2) => {
-                let val: u8 = ((n1 as u16) << 4 | n2 as u16) as u8;
+                let val = n1 << 4 | n2;
 
                 self.registers[reg_idx as usize] =
                     match self.registers[reg_idx as usize].checked_add(val) {
@@ -134,12 +155,30 @@ impl Core {
                 self.idx_register = val;
             }
             // DISPLAY: DXYN
-            // (0xD, reg_idx1, reg_idx2, n) => {
-            //     let x_pos = self.registers[reg_idx1 as usize];
-            //     let y_pos = self.registers[reg_idx2 as usize];
-            //
-            //     // self.ram[self.idx_register..
-            // }
+            (0xD, reg_idx1, reg_idx2, rows) => {
+                // coordinates will wrap
+                let mut x_pos = self.registers[reg_idx1 as usize] % CHIP8_WIDTH as u8;
+                let mut y_pos = self.registers[reg_idx2 as usize] % CHIP8_HEIGHT as u8;
+
+                self.registers[0xF] = 0;
+
+                for y in 0..rows as usize {
+                    let sprite_chunk = self.ram[self.idx_register as usize + y];
+
+                    if y_pos >= CHIP8_HEIGHT as u8 {
+                        break;
+                    }
+
+                    let row = self.display[y];
+
+                    let mask: u64 = 0xFF >> x_pos;
+                    let pixels = row & mask;
+
+                    self.display[y] = pixels ^ (sprite_chunk as u64 >> x_pos);
+
+                    y_pos += 1;
+                }
+            }
             _ => println!("Invalid nibble 1 in instruction"),
         };
 
@@ -198,7 +237,7 @@ impl ApplicationHandler for App {
                 .create_window(
                     Window::default_attributes()
                         .with_title("Chip8")
-                        .with_inner_size(LogicalSize::new(SCALED_WIDTH, SCALED_HEIGHT))
+                        .with_inner_size(LogicalSize::new(CHIP8_WIDTH as u32, CHIP8_HEIGHT as u32))
                         .with_resizable(false),
                 )
                 .unwrap(),
@@ -231,8 +270,14 @@ impl ApplicationHandler for App {
                     .unwrap();
 
                 let mut buffer = surface.buffer_mut().unwrap();
-                for i in 0..DISPLAY_SIZE {
-                    buffer[i * SCALE as usize] = self.core.display[i];
+                for y in 0..CHIP8_HEIGHT {
+                    let pixel_row = self.core.display[y];
+
+                    for x in 0..64_usize {
+                        let bit = (pixel_row >> x) & 1;
+
+                        buffer[(y * CHIP8_HEIGHT) + x] = if bit == 1 { u32::MAX } else { 0 };
+                    }
                 }
 
                 buffer.present().unwrap();
