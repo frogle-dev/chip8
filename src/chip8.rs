@@ -157,24 +157,29 @@ impl Core {
             // DISPLAY: DXYN
             (0xD, reg_idx1, reg_idx2, rows) => {
                 // coordinates will wrap
-                let mut x_pos = self.registers[reg_idx1 as usize] % CHIP8_WIDTH as u8;
+                let x_pos = self.registers[reg_idx1 as usize] % CHIP8_WIDTH as u8;
                 let mut y_pos = self.registers[reg_idx2 as usize] % CHIP8_HEIGHT as u8;
 
                 self.registers[0xF] = 0;
 
                 for y in 0..rows as usize {
-                    let sprite_chunk = self.ram[self.idx_register as usize + y];
-
                     if y_pos >= CHIP8_HEIGHT as u8 {
                         break;
                     }
 
+                    let row_idx = self.idx_register as usize + (y * CHIP8_HEIGHT);
+                    let diff = (CHIP8_WIDTH as u8 - x_pos) as usize / 8;
+
+                    let sprite_data = &self.ram[row_idx..row_idx + diff];
+                    let mut byte_arr: [u8; 8] = [0; 8];
+                    byte_arr[..sprite_data.len()].copy_from_slice(sprite_data);
+
+                    let sprite_row = u64::from_be_bytes(byte_arr);
+                    let sprite_pixels = sprite_row >> x_pos;
+
                     let row = self.display[y];
 
-                    let mask: u64 = 0xFF >> x_pos;
-                    let pixels = row & mask;
-
-                    self.display[y] = pixels ^ (sprite_chunk as u64 >> x_pos);
+                    self.display[y] = row ^ sprite_pixels;
 
                     y_pos += 1;
                 }
