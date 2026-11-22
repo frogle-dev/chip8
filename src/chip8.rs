@@ -167,16 +167,15 @@ impl Core {
         );
 
         match instr {
-            // CLEAR DISPLAY: 00E0
-            (0, 0, 0xE, 0) => {
-                self.display = [0; CHIP8_HEIGHT as usize];
-            }
             // JUMP: 1NNN
             (1, n1, n2, n3) => {
                 let addr = instr_nnn(n1, n2, n3);
 
                 self.program_counter = addr;
             }
+
+            // --------- SUBROUTINES ---------
+
             // RETURN FROM SUBROUTINE: 00EE
             (0, 0, 0xE, 0xE) => {
                 self.program_counter = self.call_stack.pop();
@@ -191,27 +190,26 @@ impl Core {
             }
 
             // --------- CONDITIONALS ---------
-            // skips the next instruction if true
 
-            // SKIP IF EQUAL: 3XNN
+            // !=: 3XNN
             (3, x, n1, n2) => {
                 if self.registers[x as usize] == instr_nn(n1, n2) {
                     self.program_counter += 2;
                 }
             }
-            // SKIP IF NOT EQUAL: 4XNN
+            // ==: 4XNN
             (4, x, n1, n2) => {
                 if self.registers[x as usize] != instr_nn(n1, n2) {
                     self.program_counter += 2;
                 }
             }
-            // SKIP IF REG EQUAL: 5XY0
+            // REG !=: 5XY0
             (5, x, y, 0) => {
                 if self.registers[x as usize] == self.registers[y as usize] {
                     self.program_counter += 2;
                 }
             }
-            // SKIP IF REG NOT EQUAL: 9XY0
+            // REG ==: 9XY0
             (9, x, y, 0) => {
                 if self.registers[x as usize] != self.registers[y as usize] {
                     self.program_counter += 2;
@@ -239,6 +237,32 @@ impl Core {
                 let val = instr_nnn(n1, n2, n3);
 
                 self.idx_register = val;
+            }
+
+            // --------- LOGIC AND MATH ---------
+
+            // REG SET: VX = VY: 8XY0
+            (8, x, y, 0) => {
+                self.registers[x as usize] = self.registers[y as usize];
+            }
+            // BITWISE OR: VX |= VY: 8XY0
+            (8, x, y, 1) => {
+                self.registers[x as usize] |= self.registers[y as usize];
+            }
+            // BITWISE AND: VX &= VY: 8XY0
+            (8, x, y, 2) => {
+                self.registers[x as usize] &= self.registers[y as usize];
+            }
+            // BITWISE XOR: VX ^= VY: 8XY0
+            (8, x, y, 3) => {
+                self.registers[x as usize] ^= self.registers[y as usize];
+            }
+
+            // --------- DISPLAY ---------
+
+            // CLEAR DISPLAY: 00E0
+            (0, 0, 0xE, 0) => {
+                self.display = [0; CHIP8_HEIGHT as usize];
             }
             // DISPLAY: DXYN
             (0xD, reg_idx1, reg_idx2, rows) => {
