@@ -157,37 +157,29 @@ impl Core {
             // DISPLAY: DXYN
             (0xD, reg_idx1, reg_idx2, rows) => {
                 // coordinates will wrap
-                let x_pos = self.registers[reg_idx1 as usize] % CHIP8_WIDTH as u8;
-                let mut y_pos = self.registers[reg_idx2 as usize] % CHIP8_HEIGHT as u8;
+                let x_pos = self.registers[reg_idx1 as usize] as usize % CHIP8_WIDTH;
+                let y_pos = self.registers[reg_idx2 as usize] as usize % CHIP8_HEIGHT;
 
                 self.registers[0xF] = 0;
 
                 for y in 0..rows as usize {
-                    if y_pos >= CHIP8_HEIGHT as u8 {
+                    let row = y_pos + y;
+
+                    if row >= CHIP8_HEIGHT {
                         break;
                     }
 
-                    let row_idx = self.idx_register as usize + (y * CHIP8_HEIGHT);
-                    let diff = (CHIP8_WIDTH as u8 - x_pos) as usize / 8;
+                    // sprites are 8 pixels wide
+                    let row_idx = self.idx_register as usize + y;
+                    // reverse bits needed since leftmost digit is highest bit
+                    let sprite_row = self.ram[row_idx].reverse_bits();
+                    let sprite_pixels = (sprite_row as u64) << x_pos;
 
-                    let sprite_data = &self.ram[row_idx..row_idx + diff];
-                    let mut byte_arr: [u8; 8] = [0; 8];
-                    byte_arr[..sprite_data.len()].copy_from_slice(sprite_data);
-
-                    let sprite_row = u64::from_be_bytes(byte_arr);
-                    let sprite_pixels = sprite_row >> x_pos;
-
-                    let row = self.display[y];
-
-                    self.display[y] = row ^ sprite_pixels;
-
-                    y_pos += 1;
+                    self.display[row] ^= sprite_pixels;
                 }
             }
             _ => println!("Invalid nibble 1 in instruction"),
         };
-
-        // run instruction
     }
 }
 
@@ -275,13 +267,11 @@ impl ApplicationHandler for App {
                     .unwrap();
 
                 let mut buffer = surface.buffer_mut().unwrap();
-                for y in 0..CHIP8_HEIGHT {
-                    let pixel_row = self.core.display[y];
-
+                for (y, pixel_row) in self.core.display.iter().enumerate() {
                     for x in 0..64_usize {
                         let bit = (pixel_row >> x) & 1;
 
-                        buffer[(y * CHIP8_HEIGHT) + x] = if bit == 1 { u32::MAX } else { 0 };
+                        buffer[(y * CHIP8_WIDTH) + x] = if bit == 1 { u32::MAX } else { 0 };
                     }
                 }
 
