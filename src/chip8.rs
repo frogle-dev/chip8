@@ -155,6 +155,7 @@ impl Core {
         let pc = self.program_counter as usize;
         let instr_bytes = u16::from_be_bytes([self.ram[pc], self.ram[pc + 1]]);
 
+        // instructions are two bytes
         self.program_counter += 2;
 
         // decode instruction
@@ -176,6 +177,10 @@ impl Core {
 
                 self.program_counter = addr;
             }
+            // RETURN FROM SUBROUTINE: 00EE
+            (0, 0, 0xE, 0xE) => {
+                self.program_counter = self.call_stack.pop();
+            }
             // CALL SUBROUTINE: 2NNN
             (2, n1, n2, n3) => {
                 let addr = instr_nnn(n1, n2, n3);
@@ -184,6 +189,35 @@ impl Core {
 
                 self.program_counter = addr;
             }
+
+            // --------- CONDITIONALS ---------
+            // skips the next instruction if true
+
+            // SKIP IF EQUAL: 3XNN
+            (3, x, n1, n2) => {
+                if self.registers[x as usize] == instr_nn(n1, n2) {
+                    self.program_counter += 2;
+                }
+            }
+            // SKIP IF NOT EQUAL: 4XNN
+            (4, x, n1, n2) => {
+                if self.registers[x as usize] != instr_nn(n1, n2) {
+                    self.program_counter += 2;
+                }
+            }
+            // SKIP IF REG EQUAL: 5XY0
+            (5, x, y, 0) => {
+                if self.registers[x as usize] == self.registers[y as usize] {
+                    self.program_counter += 2;
+                }
+            }
+            // SKIP IF REG NOT EQUAL: 9XY0
+            (9, x, y, 0) => {
+                if self.registers[x as usize] != self.registers[y as usize] {
+                    self.program_counter += 2;
+                }
+            }
+
             // SET: 6XNN
             (6, reg, n1, n2) => {
                 let val = instr_nn(n1, n2);
