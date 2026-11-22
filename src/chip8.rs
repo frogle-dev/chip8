@@ -174,6 +174,11 @@ impl Core {
                     let sprite_row = self.ram[row_idx].reverse_bits();
                     let sprite_pixels = (sprite_row as u64) << x_pos;
 
+                    // ch8 collision detection, if xor turns any pixels off VF register is 1
+                    if (self.display[row] & sprite_pixels) != 0 {
+                        self.registers[0xF] = 1;
+                    }
+
                     self.display[row] ^= sprite_pixels;
                 }
             }
@@ -269,6 +274,7 @@ impl ApplicationHandler for App {
                     .unwrap();
 
                 let mut buffer = surface.buffer_mut().unwrap();
+
                 for (y, pixel_row) in self.core.display.iter().enumerate() {
                     for x in 0..64_usize {
                         let bit = (pixel_row >> x) & 1;
