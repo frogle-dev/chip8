@@ -15,7 +15,6 @@ use softbuffer::{Context, Surface};
 
 const CHIP8_WIDTH: usize = 64;
 const CHIP8_HEIGHT: usize = 32;
-const DISPLAY_SIZE: usize = CHIP8_WIDTH * CHIP8_HEIGHT;
 
 const SCALE: usize = 20;
 const SCALED_WIDTH: usize = CHIP8_WIDTH * SCALE;
@@ -234,7 +233,10 @@ impl ApplicationHandler for App {
                 .create_window(
                     Window::default_attributes()
                         .with_title("Chip8")
-                        .with_inner_size(LogicalSize::new(CHIP8_WIDTH as u32, CHIP8_HEIGHT as u32))
+                        .with_inner_size(LogicalSize::new(
+                            SCALED_WIDTH as u32,
+                            SCALED_HEIGHT as u32,
+                        ))
                         .with_resizable(false),
                 )
                 .unwrap(),
@@ -270,8 +272,16 @@ impl ApplicationHandler for App {
                 for (y, pixel_row) in self.core.display.iter().enumerate() {
                     for x in 0..64_usize {
                         let bit = (pixel_row >> x) & 1;
+                        let color = (bit as u32) * u32::MAX;
 
-                        buffer[(y * CHIP8_WIDTH) + x] = if bit == 1 { u32::MAX } else { 0 };
+                        for s in 0..SCALE {
+                            let scaled_x = x * SCALE;
+                            let scaled_y = y * SCALE;
+
+                            let idx = (scaled_y + s) * SCALED_WIDTH + scaled_x;
+                            let row = &mut buffer[idx..idx + SCALE];
+                            row.fill(color);
+                        }
                     }
                 }
 
