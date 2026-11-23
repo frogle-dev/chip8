@@ -83,6 +83,8 @@ struct Core {
 
     ram: [u8; 4096],
     call_stack: CallStack,
+
+    // register 0xF is the flag register, holds things like carries and borrows and collisions
     registers: [u8; 16],
 
     // keypad is left side of keyboard
@@ -277,6 +279,22 @@ impl Core {
                 self.registers[x as usize] = res;
 
                 self.registers[0xF] = if !overflows { 1 } else { 0 };
+            }
+            // BITWISE RIGHT SHIFT: VX >>= VY: 8XY6
+            (8, x, y, 6) => {
+                let vy = self.registers[y as usize];
+
+                // VF is the bit shifted out
+                self.registers[0xF] = vy & 1;
+                self.registers[x as usize] = vy >> 1;
+            }
+            // BITWISE LEFT SHIFT: VX <<= VY: 8XYE
+            (8, x, y, 0xE) => {
+                let vy = self.registers[y as usize];
+
+                // VF is the bit shifted out
+                self.registers[0xF] = vy >> (u8::BITS - 1);
+                self.registers[x as usize] = vy << 1;
             }
 
             // --------- DISPLAY ---------
