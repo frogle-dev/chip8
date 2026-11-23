@@ -226,11 +226,8 @@ impl Core {
             (7, reg_idx, n1, n2) => {
                 let val = instr_nn(n1, n2);
 
-                self.registers[reg_idx as usize] =
-                    match self.registers[reg_idx as usize].checked_add(val) {
-                        Some(res) => res,
-                        None => panic!("Error: add instruction integer overflow"),
-                    };
+                let (res, _) = self.registers[reg_idx as usize].overflowing_add(val);
+                self.registers[reg_idx as usize] = res;
             }
             // SET INDEX: ANNN
             (0xA, n1, n2, n3) => {
@@ -241,21 +238,45 @@ impl Core {
 
             // --------- LOGIC AND MATH ---------
 
-            // REG SET: VX = VY: 8XY0
+            // SET: VX = VY: 8XY0
             (8, x, y, 0) => {
                 self.registers[x as usize] = self.registers[y as usize];
             }
-            // BITWISE OR: VX |= VY: 8XY0
+            // BITWISE OR: VX |= VY: 8XY1
             (8, x, y, 1) => {
                 self.registers[x as usize] |= self.registers[y as usize];
             }
-            // BITWISE AND: VX &= VY: 8XY0
+            // BITWISE AND: VX &= VY: 8XY2
             (8, x, y, 2) => {
                 self.registers[x as usize] &= self.registers[y as usize];
             }
-            // BITWISE XOR: VX ^= VY: 8XY0
+            // BITWISE XOR: VX ^= VY: 8XY3
             (8, x, y, 3) => {
                 self.registers[x as usize] ^= self.registers[y as usize];
+            }
+            // ADD: VX += VY: 8XY4
+            (8, x, y, 4) => {
+                let (res, overflows) =
+                    self.registers[x as usize].overflowing_add(self.registers[y as usize]);
+                self.registers[x as usize] = res;
+
+                self.registers[0xF] = if overflows { 1 } else { 0 };
+            }
+            // SUBTRACT: VX -= VY: 8XY5
+            (8, x, y, 5) => {
+                let (res, overflows) =
+                    self.registers[x as usize].overflowing_sub(self.registers[y as usize]);
+                self.registers[x as usize] = res;
+
+                self.registers[0xF] = if !overflows { 1 } else { 0 };
+            }
+            // SUBTRACT: VX -= VY: 8XY7
+            (8, x, y, 7) => {
+                let (res, overflows) =
+                    self.registers[y as usize].overflowing_sub(self.registers[x as usize]);
+                self.registers[x as usize] = res;
+
+                self.registers[0xF] = if !overflows { 1 } else { 0 };
             }
 
             // --------- DISPLAY ---------
