@@ -250,6 +250,21 @@ impl Core {
                 }
             }
 
+            // --------- INPUT ---------
+
+            // IF KEY VX NOT PRESSED THEN: EX9E
+            (0xE, x, 9, 0xE) => {
+                if self.keypad[self.registers[x as usize] as usize] {
+                    self.program_counter += 2;
+                }
+            }
+            // IF KEY VX PRESSED THEN: EXA1
+            (0xE, x, 0xA, 1) => {
+                if !self.keypad[self.registers[x as usize] as usize] {
+                    self.program_counter += 2;
+                }
+            }
+
             // --------- LOGIC AND MATH ---------
 
             // SET: VX = VY: 8XY0
