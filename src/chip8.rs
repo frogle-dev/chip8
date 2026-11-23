@@ -2,6 +2,8 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::time::Instant;
 
+use rand::RngExt;
+
 use thiserror::Error;
 
 use winit::application::ApplicationHandler;
@@ -169,11 +171,41 @@ impl Core {
         );
 
         match instr {
-            // JUMP: 1NNN
+            // JUMP: jump NNN: 1NNN
             (1, n1, n2, n3) => {
                 let addr = instr_nnn(n1, n2, n3);
 
                 self.program_counter = addr;
+            }
+            // OFFSET JUMP: jump NNN + V0: BNNN
+            (0xB, n1, n2, n3) => {
+                let addr = instr_nnn(n1, n2, n3);
+
+                self.program_counter = addr + self.registers[0] as u16;
+            }
+            // SET: 6XNN
+            (6, reg, n1, n2) => {
+                let val = instr_nn(n1, n2);
+
+                self.registers[reg as usize] = val;
+            }
+            // ADD: 7XNN
+            (7, reg_idx, n1, n2) => {
+                let val = instr_nn(n1, n2);
+
+                let (res, _) = self.registers[reg_idx as usize].overflowing_add(val);
+                self.registers[reg_idx as usize] = res;
+            }
+            // SET INDEX: ANNN
+            (0xA, n1, n2, n3) => {
+                let val = instr_nnn(n1, n2, n3);
+
+                self.idx_register = val;
+            }
+            // RANDOM: CXNN
+            (0xC, x1, n1, n2) => {
+                let mut rng = rand::rng();
+                self.registers[x1 as usize] = rng.random::<u8>() & instr_nn(n1, n2);
             }
 
             // --------- SUBROUTINES ---------
@@ -216,26 +248,6 @@ impl Core {
                 if self.registers[x as usize] != self.registers[y as usize] {
                     self.program_counter += 2;
                 }
-            }
-
-            // SET: 6XNN
-            (6, reg, n1, n2) => {
-                let val = instr_nn(n1, n2);
-
-                self.registers[reg as usize] = val;
-            }
-            // ADD: 7XNN
-            (7, reg_idx, n1, n2) => {
-                let val = instr_nn(n1, n2);
-
-                let (res, _) = self.registers[reg_idx as usize].overflowing_add(val);
-                self.registers[reg_idx as usize] = res;
-            }
-            // SET INDEX: ANNN
-            (0xA, n1, n2, n3) => {
-                let val = instr_nnn(n1, n2, n3);
-
-                self.idx_register = val;
             }
 
             // --------- LOGIC AND MATH ---------
