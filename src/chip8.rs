@@ -255,25 +255,25 @@ impl Core {
 
             // --------- CONDITIONALS ---------
 
-            // !=: 3XNN
+            // SKIP IF EQUAL: 3XNN
             (3, x, n1, n2) => {
                 if self.registers[x as usize] == instr_nn(n1, n2) {
                     self.program_counter += 2;
                 }
             }
-            // ==: 4XNN
+            // SKIP IF NOT  EQUAL: 4XNN
             (4, x, n1, n2) => {
                 if self.registers[x as usize] != instr_nn(n1, n2) {
                     self.program_counter += 2;
                 }
             }
-            // REG !=: 5XY0
+            // REG SKIP IF EQUAL: 5XY0
             (5, x, y, 0) => {
                 if self.registers[x as usize] == self.registers[y as usize] {
                     self.program_counter += 2;
                 }
             }
-            // REG ==: 9XY0
+            // REG SKIP IF NOT EQUAL 9XY0
             (9, x, y, 0) => {
                 if self.registers[x as usize] != self.registers[y as usize] {
                     self.program_counter += 2;
@@ -282,13 +282,13 @@ impl Core {
 
             // --------- INPUT ---------
 
-            // IF KEY VX NOT PRESSED THEN: EX9E
+            // SKIP IF KEY VX PRESSED: EX9E
             (0xE, x, 9, 0xE) => {
                 if self.keypad[self.registers[x as usize] as usize] {
                     self.program_counter += 2;
                 }
             }
-            // IF KEY VX PRESSED THEN: EXA1
+            // SKIP IF KEY VX NOT PRESSED: EXA1
             (0xE, x, 0xA, 1) => {
                 if !self.keypad[self.registers[x as usize] as usize] {
                     self.program_counter += 2;
@@ -363,16 +363,16 @@ impl Core {
                 let vy = self.registers[y as usize];
 
                 // VF is the bit shifted out
-                self.registers[0xF] = vy & 1;
                 self.registers[x as usize] = vy >> 1;
+                self.registers[0xF] = vy & 1;
             }
             // BITWISE LEFT SHIFT: VX <<= VY: 8XYE
             (8, x, y, 0xE) => {
                 let vy = self.registers[y as usize];
 
                 // VF is the bit shifted out
-                self.registers[0xF] = vy >> (u8::BITS - 1);
                 self.registers[x as usize] = vy << 1;
+                self.registers[0xF] = vy >> (u8::BITS - 1);
             }
 
             // --------- DISPLAY ---------
