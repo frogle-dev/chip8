@@ -202,10 +202,41 @@ impl Core {
 
                 self.idx_register = val;
             }
+            // ADD TO INDEX: FX1E
+            (0xF, x, 1, 0xE) => {
+                self.idx_register += self.registers[x as usize] as u16;
+            }
             // RANDOM: CXNN
             (0xC, x1, n1, n2) => {
                 let mut rng = rand::rng();
                 self.registers[x1 as usize] = rng.random::<u8>() & instr_nn(n1, n2);
+            }
+            // FONT CHARACTER: idx reg = addr of hex character in vx FX29
+            (0xF, x, 2, 9) => {
+                self.idx_register = self.registers[x as usize] as u16 * 5;
+            }
+            // BINARY CODED DECIMAL CONVERSION: each digit of the number in vx will be stored
+            // consecutively in memory at idx reg: FX33
+            (0xF, x, 3, 3) => {
+                let num = self.registers[x as usize];
+
+                let hundreds = num / 100;
+                let tens = (num / 10) % 10;
+                let ones = num % 10;
+
+                self.ram[self.idx_register as usize + 0] = hundreds;
+                self.ram[self.idx_register as usize + 1] = tens;
+                self.ram[self.idx_register as usize + 2] = ones;
+            }
+            // STORE MEMORY: V0..=VX will be stored from I..=(I + X) in ram
+            (0xF, x, 5, 5) => {
+                let i = self.idx_register as usize;
+                self.ram[i..=i + x as usize].copy_from_slice(&self.registers[..=x as usize]);
+            }
+            // LOAD MEMORY: data at addr I..=(I + X) will be loaded into V0..=VX
+            (0xF, x, 6, 5) => {
+                let i = self.idx_register as usize;
+                self.registers[..=x as usize].copy_from_slice(&self.ram[i..=i + x as usize]);
             }
 
             // --------- SUBROUTINES ---------
@@ -263,6 +294,27 @@ impl Core {
                 if !self.keypad[self.registers[x as usize] as usize] {
                     self.program_counter += 2;
                 }
+            }
+            // WAIT FOR KEY: FX0A
+            (0xF, x, 0, 0xA) => {
+                if let Some(i) = self.keypad.iter().position(|&x| x) {
+                    self.registers[x as usize] = i as u8;
+                } else {
+                    self.program_counter -= 2;
+                }
+            }
+
+            // --------- TIMERS ---------
+
+            //
+            (0xF, x, 0, 7) => {
+                self.registers[x as usize] = self.delay_timer;
+            }
+            (0xF, x, 1, 5) => {
+                self.delay_timer = self.registers[x as usize];
+            }
+            (0xF, x, 1, 8) => {
+                self.sound_timer = self.registers[x as usize];
             }
 
             // --------- LOGIC AND MATH ---------
