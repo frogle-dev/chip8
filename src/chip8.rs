@@ -57,7 +57,7 @@ impl CallStack {
 
     /// # Panics
     fn push(&mut self, val: u16) {
-        if self.last_idx >= (self.arr.len() - 1) {
+        if self.last_idx >= self.arr.len() {
             panic!("Push overflows CallStack size");
         }
 
@@ -72,10 +72,9 @@ impl CallStack {
             panic!("Pop on empty CallStack");
         }
 
-        let i = self.last_idx;
         self.last_idx -= 1;
 
-        self.arr[i]
+        self.arr[self.last_idx]
     }
 }
 
@@ -411,7 +410,7 @@ impl Core {
                     self.display[row] ^= sprite_pixels;
                 }
             }
-            _ => println!("Invalid nibble 1 in instruction"),
+            (a, b, c, d) => panic!("Invalid instruction: {:X}{:X}{:X}{:X}", a, b, c, d),
         };
     }
 }
