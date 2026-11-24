@@ -34,12 +34,24 @@ pub enum Error {
     Io(#[from] std::io::Error),
 }
 
-fn instr_nn(n1: u8, n2: u8) -> u8 {
-    n1 << 4 | n2 as u8
+struct Opcode {
+    cat: u8,
+    x: usize,
+    y: usize,
+    n: u8,
+    nn: u8,
+    nnn: u16,
 }
 
-fn instr_nnn(n1: u8, n2: u8, n3: u8) -> u16 {
-    (n1 as u16) << 8 | (n2 as u16) << 4 | n3 as u16
+fn decode(raw: u16) -> Opcode {
+    Opcode {
+        cat: (raw >> 12) as u8 & 0xF,
+        x: (raw as usize >> 8) & 0xF,
+        y: (raw as usize >> 4) & 0xF,
+        n: (raw & 0x000F) as u8,
+        nn: raw as u8,
+        nnn: raw & 0x0FFF,
+    }
 }
 
 struct CallStack {
@@ -161,63 +173,47 @@ impl Core {
         // instructions are two bytes
         self.program_counter += 2;
 
-        // decode instruction
-        let instr = (
-            (instr_bytes >> 12) as u8 & 0xF,
-            (instr_bytes >> 8) as u8 & 0xF,
-            (instr_bytes >> 4) as u8 & 0xF,
-            instr_bytes as u8 & 0xF,
-        );
+        let op = decode(instr_bytes);
 
-        match instr {
+        match (op.cat, op.x, op.y, op.n) {
             // JUMP: jump NNN: 1NNN
-            (1, n1, n2, n3) => {
-                let addr = instr_nnn(n1, n2, n3);
-
-                self.program_counter = addr;
+            (1, _, _, _) => {
+                self.program_counter = op.nnn;
             }
             // OFFSET JUMP: jump NNN + V0: BNNN
-            (0xB, n1, n2, n3) => {
-                let addr = instr_nnn(n1, n2, n3);
-
-                self.program_counter = addr + self.registers[0] as u16;
+            (0xB, _, _, _) => {
+                self.program_counter = op.nnn + self.registers[0] as u16;
             }
             // SET: 6XNN
-            (6, reg, n1, n2) => {
-                let val = instr_nn(n1, n2);
-
-                self.registers[reg as usize] = val;
+            (6, _, _, _) => {
+                self.registers[op.x] = op.nn;
             }
             // ADD: 7XNN
-            (7, reg_idx, n1, n2) => {
-                let val = instr_nn(n1, n2);
-
-                let (res, _) = self.registers[reg_idx as usize].overflowing_add(val);
-                self.registers[reg_idx as usize] = res;
+            (7, _, _, _) => {
+                let (res, _) = self.registers[op.x].overflowing_add(op.nn);
+                self.registers[op.x] = res;
             }
             // SET INDEX: ANNN
-            (0xA, n1, n2, n3) => {
-                let val = instr_nnn(n1, n2, n3);
-
-                self.idx_register = val;
+            (0xA, _, _, _) => {
+                self.idx_register = op.nnn;
             }
             // ADD TO INDEX: FX1E
-            (0xF, x, 1, 0xE) => {
-                self.idx_register += self.registers[x as usize] as u16;
+            (0xF, _, 1, 0xE) => {
+                self.idx_register += self.registers[op.x] as u16;
             }
             // RANDOM: CXNN
-            (0xC, x1, n1, n2) => {
+            (0xC, _, _, _) => {
                 let mut rng = rand::rng();
-                self.registers[x1 as usize] = rng.random::<u8>() & instr_nn(n1, n2);
+                self.registers[op.x] = rng.random::<u8>() & op.nn;
             }
             // FONT CHARACTER: idx reg = addr of hex character in vx FX29
-            (0xF, x, 2, 9) => {
-                self.idx_register = self.registers[x as usize] as u16 * 5;
+            (0xF, _, 2, 9) => {
+                self.idx_register = self.registers[op.x] as u16 * 5;
             }
             // BINARY CODED DECIMAL CONVERSION: each digit of the number in vx will be stored
             // consecutively in memory at idx reg: FX33
-            (0xF, x, 3, 3) => {
-                let num = self.registers[x as usize];
+            (0xF, _, 3, 3) => {
+                let num = self.registers[op.x];
 
                 let hundreds = num / 100;
                 let tens = (num / 10) % 10;
@@ -227,15 +223,15 @@ impl Core {
                 self.ram[self.idx_register as usize + 1] = tens;
                 self.ram[self.idx_register as usize + 2] = ones;
             }
-            // STORE MEMORY: V0..=VX will be stored from I..=(I + X) in ram
-            (0xF, x, 5, 5) => {
+            // STORE MEMORY: V0..=VX will be stored from I..=(I + X) in ram: FX55
+            (0xF, _, 5, 5) => {
                 let i = self.idx_register as usize;
-                self.ram[i..=i + x as usize].copy_from_slice(&self.registers[..=x as usize]);
+                self.ram[i..=i + op.x].copy_from_slice(&self.registers[..=op.x]);
             }
-            // LOAD MEMORY: data at addr I..=(I + X) will be loaded into V0..=VX
-            (0xF, x, 6, 5) => {
+            // LOAD MEMORY: data at addr I..=(I + X) will be loaded into V0..=VX: FX65
+            (0xF, _, 6, 5) => {
                 let i = self.idx_register as usize;
-                self.registers[..=x as usize].copy_from_slice(&self.ram[i..=i + x as usize]);
+                self.registers[..=op.x].copy_from_slice(&self.ram[i..=i + op.x]);
             }
 
             // --------- SUBROUTINES ---------
@@ -245,37 +241,35 @@ impl Core {
                 self.program_counter = self.call_stack.pop();
             }
             // CALL SUBROUTINE: 2NNN
-            (2, n1, n2, n3) => {
-                let addr = instr_nnn(n1, n2, n3);
-
+            (2, ..) => {
                 self.call_stack.push(self.program_counter);
 
-                self.program_counter = addr;
+                self.program_counter = op.nnn;
             }
 
             // --------- CONDITIONALS ---------
 
             // SKIP IF EQUAL: 3XNN
-            (3, x, n1, n2) => {
-                if self.registers[x as usize] == instr_nn(n1, n2) {
+            (3, ..) => {
+                if self.registers[op.x] == op.nn {
                     self.program_counter += 2;
                 }
             }
             // SKIP IF NOT  EQUAL: 4XNN
-            (4, x, n1, n2) => {
-                if self.registers[x as usize] != instr_nn(n1, n2) {
+            (4, ..) => {
+                if self.registers[op.x] != op.nn {
                     self.program_counter += 2;
                 }
             }
             // REG SKIP IF EQUAL: 5XY0
-            (5, x, y, 0) => {
-                if self.registers[x as usize] == self.registers[y as usize] {
+            (5, _, _, 0) => {
+                if self.registers[op.x] == self.registers[op.y] {
                     self.program_counter += 2;
                 }
             }
             // REG SKIP IF NOT EQUAL 9XY0
-            (9, x, y, 0) => {
-                if self.registers[x as usize] != self.registers[y as usize] {
+            (9, _, _, 0) => {
+                if self.registers[op.x] != self.registers[op.y] {
                     self.program_counter += 2;
                 }
             }
@@ -283,21 +277,21 @@ impl Core {
             // --------- INPUT ---------
 
             // SKIP IF KEY VX PRESSED: EX9E
-            (0xE, x, 9, 0xE) => {
-                if self.keypad[self.registers[x as usize] as usize] {
+            (0xE, _, 9, 0xE) => {
+                if self.keypad[self.registers[op.x] as usize] {
                     self.program_counter += 2;
                 }
             }
             // SKIP IF KEY VX NOT PRESSED: EXA1
-            (0xE, x, 0xA, 1) => {
-                if !self.keypad[self.registers[x as usize] as usize] {
+            (0xE, _, 0xA, 1) => {
+                if !self.keypad[self.registers[op.x] as usize] {
                     self.program_counter += 2;
                 }
             }
             // WAIT FOR KEY: FX0A
-            (0xF, x, 0, 0xA) => {
-                if let Some(i) = self.keypad.iter().position(|&x| x) {
-                    self.registers[x as usize] = i as u8;
+            (0xF, _, 0, 0xA) => {
+                if let Some(i) = self.keypad.iter().position(|&b| b) {
+                    self.registers[op.x] = i as u8;
                 } else {
                     self.program_counter -= 2;
                 }
@@ -305,73 +299,72 @@ impl Core {
 
             // --------- TIMERS ---------
 
-            //
-            (0xF, x, 0, 7) => {
-                self.registers[x as usize] = self.delay_timer;
+            // VX = delay_timer: FX07
+            (0xF, _, 0, 7) => {
+                self.registers[op.x] = self.delay_timer;
             }
-            (0xF, x, 1, 5) => {
-                self.delay_timer = self.registers[x as usize];
+            // delay_timer = VX: FX15
+            (0xF, _, 1, 5) => {
+                self.delay_timer = self.registers[op.x];
             }
-            (0xF, x, 1, 8) => {
-                self.sound_timer = self.registers[x as usize];
+            // sound_timer = VX: FX18
+            (0xF, _, 1, 8) => {
+                self.sound_timer = self.registers[op.x];
             }
 
             // --------- LOGIC AND MATH ---------
 
             // SET: VX = VY: 8XY0
-            (8, x, y, 0) => {
-                self.registers[x as usize] = self.registers[y as usize];
+            (8, _, _, 0) => {
+                self.registers[op.x] = self.registers[op.y];
             }
             // BITWISE OR: VX |= VY: 8XY1
-            (8, x, y, 1) => {
-                self.registers[x as usize] |= self.registers[y as usize];
+            (8, _, _, 1) => {
+                self.registers[op.x] |= self.registers[op.y];
             }
             // BITWISE AND: VX &= VY: 8XY2
-            (8, x, y, 2) => {
-                self.registers[x as usize] &= self.registers[y as usize];
+            (8, _, _, 2) => {
+                self.registers[op.x] &= self.registers[op.y];
             }
             // BITWISE XOR: VX ^= VY: 8XY3
-            (8, x, y, 3) => {
-                self.registers[x as usize] ^= self.registers[y as usize];
+            (8, _, _, 3) => {
+                self.registers[op.x] ^= self.registers[op.y];
             }
             // ADD: VX += VY: 8XY4
-            (8, x, y, 4) => {
-                let (res, overflows) =
-                    self.registers[x as usize].overflowing_add(self.registers[y as usize]);
-                self.registers[x as usize] = res;
+            (8, _, _, 4) => {
+                let (res, overflows) = self.registers[op.x].overflowing_add(self.registers[op.y]);
+                self.registers[op.x] = res;
 
                 self.registers[0xF] = if overflows { 1 } else { 0 };
             }
             // SUBTRACT: VX -= VY: 8XY5
-            (8, x, y, 5) => {
-                let (res, overflows) =
-                    self.registers[x as usize].overflowing_sub(self.registers[y as usize]);
-                self.registers[x as usize] = res;
+            (8, _, _, 5) => {
+                let (res, overflows) = self.registers[op.x].overflowing_sub(self.registers[op.y]);
+                self.registers[op.x] = res;
 
                 self.registers[0xF] = if !overflows { 1 } else { 0 };
             }
             // SUBTRACT: VX -= VY: 8XY7
-            (8, x, y, 7) => {
-                let (res, overflows) =
-                    self.registers[y as usize].overflowing_sub(self.registers[x as usize]);
-                self.registers[x as usize] = res;
+            (8, _, _, 7) => {
+                let (res, overflows) = self.registers[op.y].overflowing_sub(self.registers[op.x]);
+                self.registers[op.x] = res;
 
                 self.registers[0xF] = if !overflows { 1 } else { 0 };
             }
             // BITWISE RIGHT SHIFT: VX >>= VY: 8XY6
-            (8, x, y, 6) => {
-                let vy = self.registers[y as usize];
+            (8, _, _, 6) => {
+                let vy = self.registers[op.y];
 
                 // VF is the bit shifted out
-                self.registers[x as usize] = vy >> 1;
+                self.registers[op.x] = vy >> 1;
                 self.registers[0xF] = vy & 1;
             }
             // BITWISE LEFT SHIFT: VX <<= VY: 8XYE
-            (8, x, y, 0xE) => {
-                let vy = self.registers[y as usize];
+            (8, _, _, 0xE) => {
+                let vy = self.registers[op.y];
 
                 // VF is the bit shifted out
-                self.registers[x as usize] = vy << 1;
+                self.registers[op.x] = vy << 1;
                 self.registers[0xF] = vy >> (u8::BITS - 1);
             }
 
@@ -382,14 +375,14 @@ impl Core {
                 self.display = [0; CHIP8_HEIGHT as usize];
             }
             // DISPLAY: DXYN
-            (0xD, reg_idx1, reg_idx2, rows) => {
+            (0xD, _, _, _) => {
                 // coordinates will wrap
-                let x_pos = self.registers[reg_idx1 as usize] as usize % CHIP8_WIDTH;
-                let y_pos = self.registers[reg_idx2 as usize] as usize % CHIP8_HEIGHT;
+                let x_pos = self.registers[op.x] as usize % CHIP8_WIDTH;
+                let y_pos = self.registers[op.y] as usize % CHIP8_HEIGHT;
 
                 self.registers[0xF] = 0;
 
-                for y in 0..rows as usize {
+                for y in 0..op.n as usize {
                     let row = y_pos + y;
 
                     if row >= CHIP8_HEIGHT {
@@ -562,9 +555,9 @@ impl ApplicationHandler for App {
 
         self.window.as_ref().unwrap().request_redraw();
 
-        // 60hz = 1/60 = ~0.01667
-        if self.core.timer_60hz >= 0.01667 {
-            self.core.timer_60hz = 0.0;
+        let hz = 1.0 / 60.0;
+        if self.core.timer_60hz >= hz {
+            self.core.timer_60hz -= hz;
 
             if self.core.delay_timer > 0 {
                 self.core.delay_timer -= 1;
@@ -574,8 +567,9 @@ impl ApplicationHandler for App {
             }
         }
 
-        if self.core.instruction_timer >= (1.0 / self.core.instructions_per_sec as f64) {
-            self.core.instruction_timer = 0.0;
+        let instr_hz = 1.0 / self.core.instructions_per_sec as f64;
+        if self.core.instruction_timer >= instr_hz {
+            self.core.instruction_timer -= instr_hz;
 
             self.core.process_instruction();
         }
