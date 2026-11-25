@@ -177,24 +177,24 @@ impl Core {
 
         match (op.cat, op.x, op.y, op.n) {
             // JUMP: jump NNN: 1NNN
-            (1, _, _, _) => {
+            (1, ..) => {
                 self.program_counter = op.nnn;
             }
             // OFFSET JUMP: jump NNN + V0: BNNN
-            (0xB, _, _, _) => {
+            (0xB, ..) => {
                 self.program_counter = op.nnn + self.registers[0] as u16;
             }
             // SET: 6XNN
-            (6, _, _, _) => {
+            (6, ..) => {
                 self.registers[op.x] = op.nn;
             }
             // ADD: 7XNN
-            (7, _, _, _) => {
+            (7, ..) => {
                 let (res, _) = self.registers[op.x].overflowing_add(op.nn);
                 self.registers[op.x] = res;
             }
             // SET INDEX: ANNN
-            (0xA, _, _, _) => {
+            (0xA, ..) => {
                 self.idx_register = op.nnn;
             }
             // ADD TO INDEX: FX1E
@@ -202,7 +202,7 @@ impl Core {
                 self.idx_register += self.registers[op.x] as u16;
             }
             // RANDOM: CXNN
-            (0xC, _, _, _) => {
+            (0xC, ..) => {
                 let mut rng = rand::rng();
                 self.registers[op.x] = rng.random::<u8>() & op.nn;
             }
@@ -375,7 +375,7 @@ impl Core {
                 self.display = [0; CHIP8_HEIGHT as usize];
             }
             // DISPLAY: DXYN
-            (0xD, _, _, _) => {
+            (0xD, ..) => {
                 // coordinates will wrap
                 let x_pos = self.registers[op.x] as usize % CHIP8_WIDTH;
                 let y_pos = self.registers[op.y] as usize % CHIP8_HEIGHT;
@@ -403,7 +403,10 @@ impl Core {
                     self.display[row] ^= sprite_pixels;
                 }
             }
-            (a, b, c, d) => panic!("Invalid instruction: {:X}{:X}{:X}{:X}", a, b, c, d),
+            _ => panic!(
+                "Invalid instruction: {:X}{:X}{:X}{:X}",
+                op.cat, op.x, op.y, op.n
+            ),
         };
     }
 }
@@ -556,7 +559,7 @@ impl ApplicationHandler for App {
         self.window.as_ref().unwrap().request_redraw();
 
         let hz = 1.0 / 60.0;
-        if self.core.timer_60hz >= hz {
+        while self.core.timer_60hz >= hz {
             self.core.timer_60hz -= hz;
 
             if self.core.delay_timer > 0 {
@@ -568,7 +571,7 @@ impl ApplicationHandler for App {
         }
 
         let instr_hz = 1.0 / self.core.instructions_per_sec as f64;
-        if self.core.instruction_timer >= instr_hz {
+        while self.core.instruction_timer >= instr_hz {
             self.core.instruction_timer -= instr_hz;
 
             self.core.process_instruction();
