@@ -556,8 +556,6 @@ impl ApplicationHandler for App {
 
         self.core.last_time = Instant::now();
 
-        self.window.as_ref().unwrap().request_redraw();
-
         let hz = 1.0 / 60.0;
         while self.core.timer_60hz >= hz {
             self.core.timer_60hz -= hz;
@@ -576,6 +574,8 @@ impl ApplicationHandler for App {
 
             self.core.process_instruction();
         }
+
+        self.window.as_ref().unwrap().request_redraw();
     }
 }
 
